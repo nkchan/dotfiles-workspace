@@ -1,0 +1,66 @@
+---
+- name: Install fish with Homebrew
+  community.general.homebrew:
+    name: fish
+    state: present
+
+- name: Get the Homebrew prefix
+  ansible.builtin.command: brew --prefix
+  register: homebrew_prefix
+  changed_when: false
+
+- name: Set the fish executable path
+  ansible.builtin.set_fact:
+    fish_shell_path: "{{ homebrew_prefix.stdout }}/bin/fish"
+
+- name: Create fish configuration directory
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/fish"
+    state: directory
+    mode: '0755'
+
+- name: Link fish configuration
+  ansible.builtin.file:
+    src: "{{ playbook_dir }}/fish/config.fish"
+    dest: "{{ lookup('env', 'HOME') }}/.config/fish/config.fish"
+    state: link
+
+- name: Read the current login shell
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/dscl
+      - .
+      - -read
+      - "/Users/{{ lookup('env', 'USER') }}"
+      - UserShell
+  register: current_login_shell
+  changed_when: false
+
+- name: Check whether fish is an allowed login shell
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/grep
+      - -Fqx
+      - "{{ fish_shell_path }}"
+      - /etc/shells
+  register: fish_shell_allowed
+  changed_when: false
+  failed_when: fish_shell_allowed.rc not in [0, 1]
+
+- name: Add fish to the list of permitted login shells
+  ansible.builtin.lineinfile:
+    path: /etc/shells
+    line: "{{ fish_shell_path }}"
+    state: present
+  become: true
+  when: fish_shell_allowed.rc == 1
+
+- name: Set fish as the login shell
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/chsh
+      - -s
+      - "{{ fish_shell_path }}"
+      - "{{ lookup('env', 'USER') }}"
+  become: true
+  when: "current_login_shell.stdout.split(': ')[-1] != fish_shell_path"

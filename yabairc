@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# Basic SIP-safe configuration: this does not use yabai's scripting addition.
+yabai -m config layout bsp
+yabai -m config window_placement second_child
+yabai -m config window_gap 8

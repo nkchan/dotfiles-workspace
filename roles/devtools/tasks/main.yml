@@ -1,0 +1,74 @@
+---
+- name: Check whether the jdx/mise tap is still available
+  ansible.builtin.command: git ls-remote --exit-code https://github.com/jdx/homebrew-mise HEAD
+  register: jdx_mise_tap
+  changed_when: false
+  failed_when: false
+
+- name: Add jdx/mise Homebrew tap when it is available
+  community.general.homebrew_tap:
+    name: jdx/mise
+    state: present
+  when: jdx_mise_tap.rc == 0
+
+- name: Explain the core formula fallback for mise
+  ansible.builtin.debug:
+    msg: The jdx/mise tap is unavailable; mise is installed from the Homebrew core formula.
+  when: jdx_mise_tap.rc != 0
+
+- name: Add the window manager Homebrew tap
+  community.general.homebrew_tap:
+    name: koekeishiya/formulae
+    state: present
+
+- name: Install development packages
+  community.general.homebrew:
+    name:
+      - git
+      - mise
+    state: present
+
+- name: Enable mise in zsh
+  ansible.builtin.lineinfile:
+    path: "{{ lookup('env', 'HOME') }}/.zshrc"
+    regexp: '^eval .*mise activate zsh'
+    line: 'eval "$(mise activate zsh)"'
+    create: true
+
+- name: Add local user binaries to PATH in zshenv
+  ansible.builtin.lineinfile:
+    path: "{{ lookup('env', 'HOME') }}/.zshenv"
+    regexp: '^export PATH=.*\.local/bin'
+    line: 'export PATH="$HOME/.local/bin:$PATH"'
+    create: true
+
+- name: Inspect installed mise tools
+  ansible.builtin.command: mise ls --installed --json
+  register: mise_installed_tools
+  changed_when: false
+
+- name: Install mise runtimes
+  ansible.builtin.command: mise install node@lts uv@latest python@3.14
+  when: >-
+    ((mise_installed_tools.stdout | from_json).get('node', [])
+      | selectattr('requested_version', 'equalto', 'lts')
+      | selectattr('installed', 'equalto', true) | list | length == 0)
+    or ((mise_installed_tools.stdout | from_json).get('uv', [])
+      | selectattr('requested_version', 'equalto', 'latest')
+      | selectattr('installed', 'equalto', true) | list | length == 0)
+    or ((mise_installed_tools.stdout | from_json).get('python', [])
+      | selectattr('requested_version', 'equalto', '3.14')
+      | selectattr('installed', 'equalto', true) | list | length == 0)
+
+- name: Install Ansible with uv
+  ansible.builtin.command: uv tool install --force ansible-core --with ansible
+
+- name: Check whether OpenCode CLI is installed globally
+  ansible.builtin.command: npm list --global --depth=0 opencode-ai
+  register: opencode_npm_package
+  changed_when: false
+  failed_when: false
+
+- name: Install OpenCode CLI globally with npm
+  ansible.builtin.command: npm install -g opencode-ai
+  when: opencode_npm_package.rc != 0

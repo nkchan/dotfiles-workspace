@@ -1,0 +1,59 @@
+---
+- name: Install window manager packages
+  block:
+    - name: Read Homebrew's trusted formula list
+      ansible.builtin.command: brew trust --json=v1
+      register: homebrew_trust_list
+      changed_when: false
+
+    - name: Trust only the requested window manager formulae
+      ansible.builtin.command: "brew trust --formula {{ item }}"
+      loop:
+        - koekeishiya/formulae/yabai
+        - koekeishiya/formulae/skhd
+      when: item not in ((homebrew_trust_list.stdout | from_json).formulae)
+
+    - name: Install yabai and skhd
+      community.general.homebrew:
+        name:
+          - yabai
+          - skhd
+        state: present
+
+- name: Create yabai configuration directory
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/yabai"
+    state: directory
+    mode: '0755'
+
+- name: Create skhd configuration directory
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/skhd"
+    state: directory
+    mode: '0755'
+
+- name: Ensure yabai configuration is executable
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/yabairc"
+    state: file
+    mode: '0755'
+
+- name: Link yabai configuration
+  ansible.builtin.file:
+    src: "{{ playbook_dir }}/yabairc"
+    dest: "{{ lookup('env', 'HOME') }}/.config/yabai/yabairc"
+    state: link
+
+- name: Link skhd configuration
+  ansible.builtin.file:
+    src: "{{ playbook_dir }}/skhdrc"
+    dest: "{{ lookup('env', 'HOME') }}/.config/skhd/skhdrc"
+    state: link
+
+- name: Start yabai service
+  ansible.builtin.command: yabai --start-service
+  changed_when: false
+
+- name: Start skhd service
+  ansible.builtin.command: skhd --start-service
+  changed_when: false
